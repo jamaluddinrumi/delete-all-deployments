@@ -21,4 +21,5 @@ CF_PAGES_PROJECT_NAME=xxx
 ```
 
 ### 3. run `start` script
+
 `bun run start`
