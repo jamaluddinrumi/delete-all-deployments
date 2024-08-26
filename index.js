@@ -1,4 +1,4 @@
-const fetch = require('node-fetch')
+const { ofetch } = require('ofetch') 
 const { backOff } = require('exponential-backoff')
 
 const CF_API_TOKEN = process.env.CF_API_TOKEN
@@ -19,20 +19,21 @@ const headers = {
 
 /** Get the cononical deployment (the live deployment) */
 async function getProductionDeploymentId() {
-  const response = await fetch(
+  const body = await ofetch(
     `https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/pages/projects/${CF_PAGES_PROJECT_NAME}`,
     {
       method: 'GET',
       headers,
+      parseResponse: JSON.parse
     }
   )
-  const body = await response.json()
+  
   if (!body.success) {
     throw new Error(body.errors[0].message)
   }
   const prodDeploymentId = body.result.canonical_deployment.id
   if (!prodDeploymentId) {
-    throw new Error('Unable to fetch production deployment ID')
+    throw new Error('Unable to ofetch production deployment ID')
   }
   return prodDeploymentId
 }
@@ -42,14 +43,15 @@ async function deleteDeployment(id) {
   if (CF_DELETE_ALIASED_DEPLOYMENTS === 'true') {
     params = '?force=true' // Forces deletion of aliased deployments
   }
-  const response = await fetch(
+  const body = await ofetch(
     `https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/pages/projects/${CF_PAGES_PROJECT_NAME}/deployments/${id}${params}`,
     {
       method: 'DELETE',
       headers,
+      parseResponse: JSON.parse
     }
   )
-  const body = await response.json()
+  
   if (!body.success) {
     throw new Error(body.errors[0].message)
   }
@@ -57,16 +59,17 @@ async function deleteDeployment(id) {
 }
 
 async function listDeploymentsPerPage(page) {
-  const response = await fetch(
+  const body = await ofetch(
     `https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/pages/projects/${CF_PAGES_PROJECT_NAME}/deployments?per_page=10&page=${page}`,
     {
       method: 'GET',
       headers,
+      parseResponse: JSON.parse
     }
   )
-  const body = await response.json()
+  
   if (!body.success) {
-    throw new Error(`Could not fetch deployments for ${CF_PAGES_PROJECT_NAME}`)
+    throw new Error(`Could not ofetch deployments for ${CF_PAGES_PROJECT_NAME}`)
   }
   return body.result
 }
