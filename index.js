@@ -1,151 +1,157 @@
-const { ofetch } = require('ofetch') 
-const { backOff } = require('exponential-backoff')
+const { ofetch } = require("ofetch");
+const { backOff } = require("exponential-backoff");
 
-const CF_API_TOKEN = process.env.CF_API_TOKEN
-const CF_ACCOUNT_ID = process.env.CF_ACCOUNT_ID
-const CF_PAGES_PROJECT_NAME = process.env.CF_PAGES_PROJECT_NAME
-const CF_DELETE_ALIASED_DEPLOYMENTS = process.env.CF_DELETE_ALIASED_DEPLOYMENTS
+const CF_API_TOKEN = process.env.CF_API_TOKEN;
+const CF_ACCOUNT_ID = process.env.CF_ACCOUNT_ID;
+const CF_DELETE_ALIASED_DEPLOYMENTS = process.env.CF_DELETE_ALIASED_DEPLOYMENTS;
+const CF_PAGES_PROJECT_NAME = process.argv[2];
 
-const MAX_ATTEMPTS = 5
+const MAX_ATTEMPTS = 5;
 
 const sleep = (ms) =>
   new Promise((resolve) => {
-    setTimeout(resolve, ms)
-  })
+    setTimeout(resolve, ms);
+  });
 
 const headers = {
   Authorization: `Bearer ${CF_API_TOKEN}`,
-}
+};
 
 /** Get the cononical deployment (the live deployment) */
 async function getProductionDeploymentId() {
   const body = await ofetch(
     `https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/pages/projects/${CF_PAGES_PROJECT_NAME}`,
     {
-      method: 'GET',
+      method: "GET",
       headers,
-      parseResponse: JSON.parse
-    }
-  )
-  
+      parseResponse: JSON.parse,
+    },
+  );
+
   if (!body.success) {
-    throw new Error(body.errors[0].message)
+    throw new Error(body.errors[0].message);
   }
-  const prodDeploymentId = body.result.canonical_deployment.id
+  const prodDeploymentId = body.result.canonical_deployment.id;
   if (!prodDeploymentId) {
-    throw new Error('Unable to ofetch production deployment ID')
+    throw new Error("Unable to ofetch production deployment ID");
   }
-  return prodDeploymentId
+  return prodDeploymentId;
 }
 
 async function deleteDeployment(id) {
-  let params = ''
-  if (CF_DELETE_ALIASED_DEPLOYMENTS === 'true') {
-    params = '?force=true' // Forces deletion of aliased deployments
+  let params = "";
+  if (CF_DELETE_ALIASED_DEPLOYMENTS === "true") {
+    params = "?force=true"; // Forces deletion of aliased deployments
   }
   const body = await ofetch(
     `https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/pages/projects/${CF_PAGES_PROJECT_NAME}/deployments/${id}${params}`,
     {
-      method: 'DELETE',
+      method: "DELETE",
       headers,
-      parseResponse: JSON.parse
-    }
-  )
-  
+      parseResponse: JSON.parse,
+    },
+  );
+
   if (!body.success) {
-    throw new Error(body.errors[0].message)
+    throw new Error(body.errors[0].message);
   }
-  console.log(`Deleted deployment ${id} for project ${CF_PAGES_PROJECT_NAME}`)
+  console.log(`Deleted deployment ${id} for project ${CF_PAGES_PROJECT_NAME}`);
 }
 
 async function listDeploymentsPerPage(page) {
   const body = await ofetch(
     `https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/pages/projects/${CF_PAGES_PROJECT_NAME}/deployments?per_page=10&page=${page}`,
     {
-      method: 'GET',
+      method: "GET",
       headers,
-      parseResponse: JSON.parse
-    }
-  )
-  
+      parseResponse: JSON.parse,
+    },
+  );
+
   if (!body.success) {
-    throw new Error(`Could not ofetch deployments for ${CF_PAGES_PROJECT_NAME}`)
+    throw new Error(
+      `Could not ofetch deployments for ${CF_PAGES_PROJECT_NAME}`,
+    );
   }
-  return body.result
+  return body.result;
 }
 
 async function listAllDeployments() {
-  let page = 1
-  const deploymentIds = []
+  let page = 1;
+  const deploymentIds = [];
 
   while (true) {
-    let result
+    let result;
     try {
       result = await backOff(() => listDeploymentsPerPage(page), {
         numOfAttempts: 5,
         startingDelay: 1000, // 1s, 2s, 4s, 8s, 16s
         retry: (_, attempt) => {
           console.warn(
-            `Failed to list deployments on page ${page}... retrying (${attempt}/${MAX_ATTEMPTS})`
-          )
-          return true
+            `Failed to list deployments on page ${page}... retrying (${attempt}/${MAX_ATTEMPTS})`,
+          );
+          return true;
         },
-      })
+      });
     } catch (err) {
-      console.warn(`Failed to list deployments on page ${page}.`)
-      console.warn(err)
+      console.warn(`Failed to list deployments on page ${page}.`);
+      console.warn(err);
 
-      process.exit(1)
+      process.exit(1);
     }
 
     for (const deployment of result) {
-      deploymentIds.push(deployment.id)
+      deploymentIds.push(deployment.id);
     }
 
     if (result.length) {
-      page = page + 1
-      await sleep(500)
+      page = page + 1;
+      await sleep(500);
     } else {
-      return deploymentIds
+      return deploymentIds;
     }
   }
 }
 
 async function main() {
   if (!CF_API_TOKEN) {
-    throw new Error('Please set CF_API_TOKEN as an env variable to your API Token')
+    throw new Error(
+      "Please set CF_API_TOKEN as an env variable to your API Token",
+    );
   }
 
   if (!CF_ACCOUNT_ID) {
-    throw new Error('Please set CF_ACCOUNT_ID as an env variable to your Account ID')
+    throw new Error(
+      "Please set CF_ACCOUNT_ID as an env variable to your Account ID",
+    );
   }
 
   if (!CF_PAGES_PROJECT_NAME) {
     throw new Error(
-      'Please set CF_PAGES_PROJECT_NAME as an env variable to your Pages project name'
-    )
+      "Please set CF_PAGES_PROJECT_NAME as an env variable to your Pages project name",
+    );
   }
 
-  const productionDeploymentId = await getProductionDeploymentId()
+  const productionDeploymentId = await getProductionDeploymentId();
   console.log(
-    `Found live production deployment to exclude from deletion: ${productionDeploymentId}`
-  )
+    `Found live production deployment to exclude from deletion: ${productionDeploymentId}`,
+  );
 
-  console.log('Listing all deployments, this may take a while...')
-  const deploymentIds = await listAllDeployments()
+  console.log("Listing all deployments, this may take a while...");
+  const deploymentIds = await listAllDeployments();
 
   for (id of deploymentIds) {
     if (id === productionDeploymentId) {
-      console.log(`Skipping production deployment: ${id}`)
+      console.log(`Skipping production deployment: ${id}`);
     } else {
       try {
-        await deleteDeployment(id)
-        await sleep(500)
+        await deleteDeployment(id);
+        await sleep(500);
       } catch (error) {
-        console.log(error)
+        console.log(error);
       }
     }
   }
 }
 
-main()
+main();
