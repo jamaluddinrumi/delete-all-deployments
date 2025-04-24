@@ -21,7 +21,7 @@ CF_ACCOUNT_ID=xxx
 
 ### 3. run `start` script
 
-`bun run start my-example-project`
+`bun --bun run start <project-name>`
 
 ## How it works
 
